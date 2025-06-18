@@ -1,10 +1,16 @@
 # streamlit_app.py
+# ---------------------------------------------------------------------------
+#  ✍️  Vytvořit příspěvek   (WEBHOOK_POST)     – výběr sítí + obrázky
+#  🛠  Prompt pro GPT       – trvale uložen v prompt.txt
+# ---------------------------------------------------------------------------
+
 import base64, pathlib, requests, streamlit as st
 
-# ---------- CESTA K SOUBORU S PROMPTEM ----------------------------------------
-PROMPT_FILE   = pathlib.Path("prompt.txt")
+# ---------- Konfigurace -------------------------------------------------------
+WEBHOOK_POST = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
+DEFAULT_PERSONA = "DefaultPersona"
+PROMPT_FILE = pathlib.Path("prompt.txt")
 
-# ---------- DEFAULT PROMPT ----------------------------------------------------
 DEFAULT_PROMPT = """
 Napiš příspěvek na sociální sítě společnosti **Seyfor** podle následujících instrukcí:
 
@@ -32,35 +38,26 @@ Napiš příspěvek na sociální sítě společnosti **Seyfor** podle následuj
 Vrátíš pouze text příspěvku – bez uvozovek a bez formátování kódu.
 """.strip()
 
-# ---------- FUNKCE PRO PRÁCI S PROMPTEM --------------------------------------
+# ---------- Práce s promptem --------------------------------------------------
 def load_prompt() -> str:
-    if PROMPT_FILE.exists():
-        return PROMPT_FILE.read_text(encoding="utf-8").strip()
-    return DEFAULT_PROMPT
+    return PROMPT_FILE.read_text(encoding="utf-8").strip() if PROMPT_FILE.exists() else DEFAULT_PROMPT
 
-def save_prompt(text: str):
-    PROMPT_FILE.write_text(text.strip(), encoding="utf-8")
+def save_prompt(txt: str):
+    PROMPT_FILE.write_text(txt.strip(), encoding="utf-8")
 
-# ---------- SESSION STATE -----------------------------------------------------
+# ---------- Session state -----------------------------------------------------
 if "gpt_prompt" not in st.session_state:
     st.session_state.gpt_prompt = load_prompt()
 
-# ---------- OSTATNÍ KONSTANTY -------------------------------------------------
-WEBHOOK_POST    = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
-DEFAULT_PERSONA = "DefaultPersona"
-
-# ---------- HELPER ------------------------------------------------------------
-def files_to_base64(files):
-    out = []
-    for f in files:
-        out.append(
-            {"filename": f.name,
-             "data": base64.b64encode(f.read()).decode("utf-8")}
-        )
-    return out
-
-def rerun():   # kompatibilita verzí Streamlit
+def rerun():
     (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)()
+
+# ---------- Pomocná funkce ----------------------------------------------------
+def files_to_base64(files):
+    return [
+        {"filename": f.name, "data": base64.b64encode(f.read()).decode("utf-8")}
+        for f in files
+    ]
 
 # ---------- UI ----------------------------------------------------------------
 st.set_page_config(page_title="LinkedIn bot", page_icon="📝")
@@ -70,6 +67,7 @@ tab_post, tab_prompt = st.tabs(["✍️ Vytvořit příspěvek", "🛠 Prompt pr
 
 # ====================== 1)  Vytvořit příspěvek ================================
 with tab_post:
+    st.subheader("Vytvořit příspěvek")
     with st.form("post_form"):
         topic = st.text_area("Téma / obsah příspěvku*", height=200)
         networks = st.multiselect(
@@ -79,17 +77,17 @@ with tab_post:
             "Přilož obrázky (JPEG/PNG)", type=["jpg", "jpeg", "png"],
             accept_multiple_files=True
         )
-        submitted = st.form_submit_button("Odeslat do Make")
+        send = st.form_submit_button("Odeslat do Make")
 
-    if submitted:
+    if send:
         if not topic.strip():
             st.error("Téma příspěvku je povinné."); st.stop()
 
         payload = {
-            "personaName":  DEFAULT_PERSONA,
-            "postContent":  topic.strip(),
+            "personaName": DEFAULT_PERSONA,
+            "postContent": topic.strip(),
             "socialNetworks": networks,
-            "gptPrompt":    st.session_state.gpt_prompt,
+            "gptPrompt": st.session_state.gpt_prompt,
             "images": files_to_base64(imgs) if imgs else []
         }
 
@@ -100,21 +98,25 @@ with tab_post:
             except Exception as e:
                 st.error(f"Chyba při komunikaci s Make: {e}"); st.stop()
 
-        post = r.json().get("post", r.text)
+        # ---------- Robustní načtení odpovědi ----------
+        try:
+            resp = r.json()
+            post = resp.get("post", str(resp)) if isinstance(resp, dict) else str(resp)
+        except ValueError:
+            post = r.text or "⚠️ Odpověď nebyla ve formátu JSON."
+
         st.success("Hotovo! Generovaný příspěvek:")
         st.markdown(post.strip().replace("\n", "  \n"))
 
 # ====================== 2)  Prompt pro GPT ====================================
 with tab_prompt:
-    st.subheader("Výchozí prompt (lze upravit)")
-
-    prompt_text = st.text_area(
+    st.subheader("Prompt pro GPT (trvale uložen v prompt.txt)")
+    edited = st.text_area(
         "Uprav prompt dle libosti:",
         value=st.session_state.gpt_prompt,
         height=300
     )
     if st.button("Uložit prompt"):
-        st.session_state.gpt_prompt = prompt_text.strip() or DEFAULT_PROMPT
+        st.session_state.gpt_prompt = edited.strip() or DEFAULT_PROMPT
         save_prompt(st.session_state.gpt_prompt)
-        st.success("Prompt uložen a příště se načte ze souboru.")
-        rerun()
+        st.success("Prompt uložen."); rerun()
