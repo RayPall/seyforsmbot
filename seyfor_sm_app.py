@@ -69,7 +69,7 @@ with tab_post:
     with st.form("post_form"):
         topic = st.text_area("Téma / obsah příspěvku*", height=200)
         networks = st.multiselect(
-            "Vyber sociální sítě", ["Facebook", "Instagram", "Threads"]
+            "Vyber sociální sítě", ["Facebook", "Instagram", "Threads", "Linkedin"]
         )
         imgs = st.file_uploader(
             "Přilož obrázky (JPEG/PNG)", type=["jpg", "jpeg", "png"],
