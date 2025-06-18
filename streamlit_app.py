@@ -1,114 +1,99 @@
 # streamlit_app.py
 # ---------------------------------------------------------------------------
-#  ✍️  Vygenerovat příspěvek     (WEBHOOK_POST)
-#  ➕  Přidat personu            (WEBHOOK_PERSONA_ADD)
+#  ✍️  Vytvořit příspěvek   (WEBHOOK_POST)     – výběr sítí + obrázky
+#  🛠  Prompt pro GPT       (panel v záložce)  – text, který se připojí do payloadu
 # ---------------------------------------------------------------------------
 
-import requests, streamlit as st
+import base64, io, json, requests, streamlit as st
 
-# --------- Make webhooky ------------------------------------------------------
-WEBHOOK_POST        = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
-WEBHOOK_PERSONA_ADD = "https://hook.eu2.make.com/9yo8y77db7i6do272joo7ybfoue1qcoc"
+# ---------- KONSTANTY ---------------------------------------------------------
+WEBHOOK_POST = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
+DEFAULT_PERSONA = "DefaultPersona"          # interně použitá persona
+DEFAULT_PROMPT  = "Napiš kreativní a poutavý příspěvek pro sociální sítě."
 
-DEFAULT_PERSONAS = [
-    "Daniel Šturm", "Martin Cígler", "Marek Steiger",
-    "Kristína Pastierik", "Lucie Jahnová", "Seyfor"
-]
+# ---------- SESSION STATE -----------------------------------------------------
+if "gpt_prompt" not in st.session_state:
+    st.session_state.gpt_prompt = DEFAULT_PROMPT
 
-if "person_list" not in st.session_state:
-    st.session_state.person_list = DEFAULT_PERSONAS.copy()
+# ---------- HELPER ------------------------------------------------------------
+def files_to_base64(files):
+    """Vrátí list dictů: [{'filename': .., 'data': ..}, ...]"""
+    out = []
+    for f in files:
+        b = f.read()
+        out.append({
+            "filename": f.name,
+            "data": base64.b64encode(b).decode("utf-8")
+        })
+    return out
 
-def rerun():
-    (st.rerun if hasattr(st, "rerun") else st.experimental_rerun)()
-
-# ------------------------------------------------------------------------------
+# ---------- UI ----------------------------------------------------------------
 st.set_page_config(page_title="LinkedIn bot", page_icon="📝")
 st.title("LinkedIn bot")
 
-tab_post, tab_persona = st.tabs(["✍️ Vygenerovat příspěvek", "➕ Přidat personu"])
+tab_post, tab_prompt = st.tabs(["✍️ Vytvořit příspěvek", "🛠 Prompt pro GPT"])
 
-# ====================== 1)  Vygenerovat příspěvek =============================
+# ====================== 1)  Vytvořit příspěvek ================================
 with tab_post:
-    st.subheader("Vygenerovat LinkedIn příspěvek")
-    with st.form("post_form"):
-        topic = st.text_area("Jaké má být téma příspěvku?")
-        persona = st.radio(
-            "Čím stylem má být příspěvek napsán?",
-            st.session_state.person_list
-        )
-        submitted_post = st.form_submit_button("Odeslat")
+    st.subheader("Vytvořit příspěvek")
 
-    if submitted_post:
+    with st.form("post_form"):
+        topic = st.text_area("Téma / obsah příspěvku*", height=200)
+
+        networks = st.multiselect(
+            "Vyber sociální sítě",
+            ["Facebook", "Instagram", "Threads"],
+            placeholder="Vyber jednu či více sítí…"
+        )
+
+        uploaded_imgs = st.file_uploader(
+            "Přilož obrázky (JPEG/PNG, více souborů lze vybrat najednou)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True
+        )
+
+        submitted = st.form_submit_button("Odeslat do Make")
+
+    if submitted:
+        if not topic.strip():
+            st.error("Téma příspěvku je povinné.")
+            st.stop()
+        if not networks:
+            st.warning("Nezvolil jsi žádnou sociální síť – pokračuji, ale možná to nechceš.")
+
         payload = {
-            "personName":  persona,
-            "postContent": topic
-            # e‑mail jsme odstranili
+            "personaName":  DEFAULT_PERSONA,
+            "postContent":  topic.strip(),
+            "socialNetworks": networks,          # list[str]
+            "gptPrompt":   st.session_state.gpt_prompt,
+            "images": files_to_base64(uploaded_imgs) if uploaded_imgs else []
         }
 
-        with st.spinner("Generuji pomocí ChatGPT…"):
+        with st.spinner("Odesílám na Make…"):
             try:
-                res = requests.post(WEBHOOK_POST, json=payload, timeout=120)
-                res.raise_for_status()
+                r = requests.post(WEBHOOK_POST, json=payload, timeout=120)
+                r.raise_for_status()
             except Exception as e:
-                st.error(f"Chyba při komunikaci s Make: {e}")
+                st.error(f"Chyba při komunikaci s Make: {e}")
                 st.stop()
 
         try:
-            post_text = res.json().get("post", "")
+            result = r.json().get("post", "")
         except Exception:
-            post_text = res.text
+            result = r.text
 
-        post_md = post_text.strip().replace("\n", "  \n")
-        st.success("Hotovo! Zde je vygenerovaný příspěvek:")
-        st.markdown(post_md)
+        st.success("Hotovo! Generovaný příspěvek:")
+        st.markdown(result.strip().replace("\n", "  \n"))
 
-# ====================== 2)  Přidat personu ====================================
-with tab_persona:
-    st.subheader("Přidat novou personu")
+# ====================== 2)  Prompt pro GPT ====================================
+with tab_prompt:
+    st.subheader("Prompt pro GPT (součást payloadu)")
 
-    with st.form("persona_add_form", clear_on_submit=True):
-        col1, col2 = st.columns(2)
-
-        with col1:
-            name   = st.text_input("Jméno*")
-            role   = st.text_input("Role / pozice*")
-            tone   = st.text_area("Tone of Voice*")
-        with col2:
-            style  = st.text_area("Styl psaní*")
-            lang_choices = ("Čeština", "Slovenština", "Angličtina", "Jiný")
-            lang   = st.selectbox("Jazyk*", lang_choices)
-
-            custom_lang = st.text_input("Zadejte název jazyka*") if lang == "Jiný" else ""
-            sample = st.text_area("Ukázkový příspěvek*")
-
-        submitted_persona_add = st.form_submit_button("Uložit personu")
-
-    if submitted_persona_add:
-        if not name.strip():
-            st.error("Jméno je povinné.")
-            st.stop()
-        if lang == "Jiný" and not custom_lang.strip():
-            st.error("Prosím zadej název jazyka.")
-            st.stop()
-
-        language_value = custom_lang.strip() if lang == "Jiný" else lang
-
-        payload_add = {
-            "name":     name.strip(),
-            "role":     role.strip(),
-            "tone":     tone.strip(),
-            "style":    style.strip(),
-            "language": language_value,
-            "sample":   sample.strip()
-        }
-
-        with st.spinner("Ukládám personu…"):
-            try:
-                requests.post(WEBHOOK_PERSONA_ADD, json=payload_add, timeout=30).raise_for_status()
-            except Exception as e:
-                st.error(f"Chyba při ukládání: {e}")
-                st.stop()
-
-        st.session_state.person_list.append(name.strip())
-        st.success("Persona uložena ✔️")
-        rerun()
+    new_prompt = st.text_area(
+        "Uprav prompt dle libosti:",
+        value=st.session_state.gpt_prompt,
+        height=180
+    )
+    if st.button("Uložit prompt"):
+        st.session_state.gpt_prompt = new_prompt.strip() or DEFAULT_PROMPT
+        st.success("Prompt uložen.")
