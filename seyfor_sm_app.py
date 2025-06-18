@@ -1,15 +1,41 @@
 # streamlit_app.py
 # ---------------------------------------------------------------------------
 #  ✍️  Vytvořit příspěvek   (WEBHOOK_POST)     – výběr sítí + obrázky
-#  🛠  Prompt pro GPT       (panel v záložce)  – text, který se připojí do payloadu
+#  🛠  Prompt pro GPT       – text se ukládá do session_state a posílá se v payloadu
 # ---------------------------------------------------------------------------
 
-import base64, io, json, requests, streamlit as st
+import base64, requests, streamlit as st
 
 # ---------- KONSTANTY ---------------------------------------------------------
 WEBHOOK_POST = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
-DEFAULT_PERSONA = "DefaultPersona"          # interně použitá persona
-DEFAULT_PROMPT  = "Napiš kreativní a poutavý příspěvek pro sociální sítě."
+DEFAULT_PERSONA = "DefaultPersona"
+
+DEFAULT_PROMPT = """
+Napiš příspěvek na sociální sítě společnosti **Seyfor** podle následujících instrukcí:
+
+**TONE OF VOICE**
+• Odborný a důvěryhodný – uveď alespoň 2 konkrétní čísla či fakta  
+• Vstřícný a vděčný – poděkuj partnerům, kolegům nebo účastníkům  
+• Motivační a zapojující – obsahuje jasné CTA a lidskou výzvu  
+• Profesně přátelský – korporátní, ale neformálně lidský; používej emoji 🎉 🏃‍♀️ 💜
+
+**STYL PSANÍ**
+1. Úvodní věta s emoji a hlavním sdělením  
+2. 2-3 krátké odstavce nebo odrážky (✅ / 👉 / •) s konkrétními fakty  
+3. Závěrečná výzva k akci + poděkování  
+• Jazyk: **čeština**  
+• V každém odstavci max. 2 věty  
+• Na závěr 3-5 relevantních hashtagů (#jsmeseyfor …)
+
+**DOPLŇKOVÁ PRAVIDLA**
+• Nepiš datum ani místo, pokud není zadáno ve vstupu  
+• U metrik vždy použij číslici (30 let, 4 města, 2 týmy)  
+• Emoji zakomponuj organicky, nepřekládej jimi slova  
+• Rozsah do ≈ 120 slov  
+
+**VÝSTUP**  
+Vrátíš pouze text příspěvku – bez uvozovek a bez formátování kódu.
+""".strip()
 
 # ---------- SESSION STATE -----------------------------------------------------
 if "gpt_prompt" not in st.session_state:
@@ -17,13 +43,11 @@ if "gpt_prompt" not in st.session_state:
 
 # ---------- HELPER ------------------------------------------------------------
 def files_to_base64(files):
-    """Vrátí list dictů: [{'filename': .., 'data': ..}, ...]"""
     out = []
     for f in files:
-        b = f.read()
         out.append({
             "filename": f.name,
-            "data": base64.b64encode(b).decode("utf-8")
+            "data": base64.b64encode(f.read()).decode("utf-8")
         })
     return out
 
@@ -58,14 +82,12 @@ with tab_post:
         if not topic.strip():
             st.error("Téma příspěvku je povinné.")
             st.stop()
-        if not networks:
-            st.warning("Nezvolil jsi žádnou sociální síť – pokračuji, ale možná to nechceš.")
 
         payload = {
-            "personaName":  DEFAULT_PERSONA,
-            "postContent":  topic.strip(),
-            "socialNetworks": networks,          # list[str]
-            "gptPrompt":   st.session_state.gpt_prompt,
+            "personaName":   DEFAULT_PERSONA,
+            "postContent":   topic.strip(),
+            "socialNetworks": networks,
+            "gptPrompt":     st.session_state.gpt_prompt,
             "images": files_to_base64(uploaded_imgs) if uploaded_imgs else []
         }
 
@@ -77,6 +99,7 @@ with tab_post:
                 st.error(f"Chyba při komunikaci s Make: {e}")
                 st.stop()
 
+        result = ""
         try:
             result = r.json().get("post", "")
         except Exception:
@@ -92,7 +115,7 @@ with tab_prompt:
     new_prompt = st.text_area(
         "Uprav prompt dle libosti:",
         value=st.session_state.gpt_prompt,
-        height=180
+        height=260
     )
     if st.button("Uložit prompt"):
         st.session_state.gpt_prompt = new_prompt.strip() or DEFAULT_PROMPT
