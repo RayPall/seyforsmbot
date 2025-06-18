@@ -7,7 +7,7 @@
 import base64, pathlib, requests, streamlit as st
 
 # ---------- Konfigurace -------------------------------------------------------
-WEBHOOK_POST = "https://hook.eu2.make.com/6m46qtelfmarmwpq1jqgomm403eg5xkw"
+WEBHOOK_POST = "https://hook.eu2.make.com/99h47b3gribi1wuywxa5wuu4vp9q27mr"
 DEFAULT_PERSONA = "DefaultPersona"
 PROMPT_FILE = pathlib.Path("prompt.txt")
 
