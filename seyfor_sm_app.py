@@ -106,7 +106,7 @@ with tab_post:
 
 # ====================== 2)  Prompt pro GPT ====================================
 with tab_prompt:
-    st.subheader("Prompt pro GPT (trvale uložen v souboru)")
+    st.subheader("Výchozí prompt (lze upravit)")
 
     prompt_text = st.text_area(
         "Uprav prompt dle libosti:",
